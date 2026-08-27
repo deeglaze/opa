@@ -1,0 +1,329 @@
+Changes
+=======
+
+v4 has many incompatibilities with v3. To see the full list of differences between
+v3 and v4, please read the [Changes-v4.md file](./Changes-v4.md). Coding Agents should read [MIGRATION-v4.md](./MICRATION-v4.md)
+
+v4.4.0 20 August 2026
+  * [jwa][jwk][jws] ML-DSA (FIPS 204) is now implemented natively when jwx is
+    built with Go 1.27 or later, where `crypto/mldsa` is part of the standard
+    library. `jwa.MLDSA44()`, `jwa.MLDSA65()` and `jwa.MLDSA87()` are
+    registered automatically, and `*mldsa.PrivateKey` / `*mldsa.PublicKey`
+    values from `crypto/mldsa` work directly with `jws.Sign`, `jws.Verify`,
+    `jwk.Import` and `jwk.Export`. No extension module and no side-effect
+    import are required.
+
+    On Go 1.26 the algorithms are not registered at all, so `jws.Sign` and
+    `jws.Verify` report them as unsupported instead of failing later with a
+    confusing key error. ML-DSA on Go 1.26 still needs
+    `github.com/jwx-go/mldsa/v4`. That extension remains safe to import on
+    Go 1.27 from its v4.0.5 release on, which detects the native
+    registration and bridges `filippo.io/mldsa` keys onto it. (#2309, #2310,
+    #2311)
+
+v4.3.0 18 August 2026
+  * [jwe] Correct the JSON `"aad"` member so it contains only
+    BASE64URL of the external Additional Authenticated Data, rather than the
+    combined value used as the content-encryption AAD. Add
+    `jwe.WithAuthenticateData` for encrypting JSON JWEs with external AAD;
+    the value is included in the shared AEAD input for all recipients, and
+    compact serialization rejects non-empty external AAD. (#2275, #2277)
+  * Fix the build under Go 1.27. Go 1.27 removed `encoding/json/v2.SkipFunc`
+    and gave its role to `errors.ErrUnsupported`, which broke compilation of
+    `internal/json` for anyone on the new toolchain. The sentinel is now
+    selected by a Go-version build tag, so both Go 1.26 (with
+    `GOEXPERIMENT=jsonv2`) and Go 1.27 build from the same source. No public
+    API or behavior change.
+
+v4.2.0 24 July 2026
+  * [jwk] `jwk.Parse` (and `Set.UnmarshalJSON`) no longer fails an entire
+    JWK Set when a single entry in the "keys" array cannot be parsed. By
+    default such an entry is now retained as a `jwk.UnsupportedKey`
+    placeholder that preserves the entry's original JSON and the error
+    that prevented parsing (RFC 7517 §5). This lets a set that mixes
+    understood keys with keys the current build does not understand — for
+    example post-quantum keys published alongside RSA/EC keys — remain
+    usable for the keys you do understand.
+
+    Because of this, `Set.Len()` and iteration now include placeholders.
+    Code that performs a cryptographic operation on every key in a set
+    should skip entries for which `jwk.IsUnsupportedKey` returns true.
+    `jws`/`jwe` key selection and `jwk.PublicSetOf` / `jwk.Export` /
+    `jwk.ExportAll` / `jwk.AssignKeyID` already reject placeholders with a
+    descriptive error rather than a generic failure.
+
+    Two escape hatches: `jwk.WithStrictKeySetParsing(true)` (per call or
+    via `jwk.Settings()`) restores the previous fail-fast behavior, and
+    `jwk.WithIgnoreParseError(true)` still drops unparseable entries on
+    `jwk.Parse` (direct `Set.UnmarshalJSON` has no per-call options and
+    honors only the global strict setting). An explicit per-call option
+    beats the global setting when the two modes clash.
+    `jwk.PublicSetOf` rejects a set containing a placeholder unless you
+    pass the new `jwk.WithOmitUnsupportedKeys(true)`, which drops them from
+    the output. (#2263)
+
+v4.1.0 1 July 2026
+  * [jws] `jws.Verify` now rejects a JWS whose protected header `"alg"`
+    does not match the algorithm used to verify it (previously the
+    non-fast-path `jws.Verify` ignored this). In particular the polymorphic
+    `"EdDSA"` and the fully-specified `"Ed25519"`/`"Ed448"` identifiers
+    (RFC 9864) are now treated as distinct, so cross-identifier verification
+    that previously succeeded is rejected by default — this is an RFC 9864
+    conformance fix. Pass the new `jws.WithSkipAlgorithmMatch(true)` option to
+    restore the lenient behavior. (#2212)
+
+  * [jws][jwt] Closed a gap where `jwt.Parse` and `jws.VerifyCompactFast`
+    (the compact-JWS fast path) were more lenient than `jws.Verify` about
+    the protected header. A token whose protected header has duplicate
+    parameter names (e.g. two `alg` entries) or a non-string `typ`/`kid`/
+    `cty` value used to verify successfully on the fast path even though
+    `jws.Verify` rejects it; `jwt.Parse` now rejects it too, so such a token
+    can no longer slip through one entry point but not the other. Well-formed
+    tokens are unaffected.
+
+    Direct callers of `jws.VerifyCompactFast` see one further change: a
+    protected header carrying anything beyond `alg` plus an optional
+    `typ`/`kid`/`cty` — for example `x5t`, `jku`, or a custom parameter —
+    now returns the new sentinel `jws.ErrNonMinimalHeader()` instead of
+    verifying. Route those through `jws.Verify` (which is what `jwt.Parse`
+    now does for you automatically). (#2236)
+
+  * [jws] Passing a non-nil payload together with `jws.WithDetachedPayload`
+    is now an error instead of being silently accepted; a detached payload
+    must be supplied only through the option. (#2211)
+
+  * [jwe] `jwe.Decrypt` now rejects a message whose authentication tag or
+    initialization vector is not the length required by the content
+    encryption algorithm, rather than attempting to decrypt it. (#2207)
+
+  * [jwe] Messages using AES-CBC-HMAC with a very large amount of additional
+    authenticated data now decrypt correctly; the AAD bit length is computed
+    as a 64-bit value rather than potentially overflowing. (#2198)
+
+  * [jwe] The `zip` (compression) parameter is honored only from the
+    protected header. A `zip` set in a per-recipient or unprotected header
+    is ignored and can no longer trigger decompression. (#2206)
+
+  * [jwe] PBES2 decryption now rejects a `p2s` (salt) shorter than the
+    8-octet minimum required by RFC 7518. (#2208)
+
+  * [jwe] Direct key agreement (`alg: "dir"`, including ML-KEM) now rejects
+    a message that also carries a non-empty `encrypted_key`, which direct
+    mode does not allow. (#2209, #2223)
+
+  * [jwk] An Ed25519 key whose byte length is wrong is now rejected at
+    import/parse, instead of being accepted as an unusable key. (#2201)
+
+  * [jwk] An EC key with a nil curve, or with a private scalar `d` larger
+    than the curve order, is now rejected at import. (#2199)
+
+  * [jwk] The `use` value is now validated when a key is parsed; an
+    unrecognized value is rejected. (#2205)
+
+  * [jwk] Computing a thumbprint with a hash whose implementation is not
+    linked into the binary now returns an error instead of panicking. (#2200)
+
+  * [jwt] `jwt.Validate` no longer panics when given a nil clock or a nil
+    validator. (#2202)
+
+  * [jwt] Reusing a token value across parses no longer carries over private
+    claims from a previous parse; they are cleared on unmarshal. (#2203)
+
+  * [jwt] A `jwt.Settings()` call changes only the options you pass;
+    previously, settings you did not specify (such as flatten-audience or
+    pedantic mode) were reset to their defaults. (#2204)
+
+  * [jws][jwk][jwe][jwt] A custom JSON field decoder that registers or
+    unregisters a decoder while it runs no longer deadlocks; the registry
+    read lock is released before your decoder is invoked. (#2197)
+
+v4.0.2 7 May 2026
+  * [jwk] BREAKING: `jwk.RegisterKeyImporter` now takes a
+    `jwk.KeyImporter[T]` interface rather than a bare typed
+    function. The v4.0.0 release exported `KeyImporter` and
+    `KeyImportFunc` but neither type was reachable from the
+    registration call, leaving `RegisterKeyImporter` inconsistent
+    with every other extension hook in `jwk` (which all anchor on
+    an interface plus a `FooFunc` adapter). The unused exported
+    types were the leftover surface of the original design that
+    didn't make it through to the registration call.
+
+    Correcting this is a compile-time break, but at the time of
+    this release the only known consumers of `RegisterKeyImporter`
+    are the `github.com/jwx-go/*` extension modules, which have
+    been updated in lock-step. Landing the intended shape now,
+    while the surface is still effectively private, costs less
+    than carrying the inconsistency through the rest of v4's
+    lifetime.
+
+    Wrap typed importer functions in `jwk.KeyImportFunc[T](...)`:
+
+        // before
+        jwk.RegisterKeyImporter(func(src *MyKey) (jwk.Key, error) { ... })
+
+        // after
+        jwk.RegisterKeyImporter(jwk.KeyImportFunc[*MyKey](func(src *MyKey) (jwk.Key, error) { ... }))
+
+    `KeyImporter[T any]` is now a generic interface; struct types
+    implementing `Import(T) (jwk.Key, error)` can be passed
+    directly without the adapter. (#2152)
+
+  * [jws] Coordinated RFC 7797 `b64=false` handling pass:
+    `jws.Verify` rejects payloads with `b64=false` unless `b64`
+    is also listed in `crit`; `jws.Sign` auto-declares `b64` in
+    `crit` when emitting `b64=false`; `Message.MarshalJSON`
+    honors `b64=false` instead of silently re-encoding;
+    `jws.VerifyCompactFast` refuses any compact JWS carrying
+    `b64` (the fast path doesn't process extension headers); and
+    `b64` is now declared as a typed boolean header field rather
+    than handled ad-hoc. (#2080, #2086, #2101, #2103, #2105)
+
+  * [jws] Reject malformed general-form JSON-serialized JWS:
+    inputs with a top-level `header` member as a sibling of
+    `signatures` are rejected (the spec only permits `header`
+    inside per-signature objects), as are inputs whose `protected`
+    member is a literal JSON object instead of a base64url-encoded
+    string. (#2088, #2107)
+
+  * [jws] `jws.AlgorithmsForKey` failures from unclassifiable
+    keys are now wrapped in a typed sentinel so callers can
+    branch on "couldn't categorize this key" without string
+    matching the error message. (#2109)
+
+  * [jws] Verify error-shape consistency: `VerifyCompactFast`
+    refusals now match the `jws.VerifyError()` taxonomy used by
+    the slow path, fan-out verify errors name the loose
+    `WithKeySet` options that were tried, multi-signature `b64`
+    mismatches name the offending signature index and conflicting
+    value, and the compact `b64=false`+payload-contains-`.` error
+    references RFC 7797 §5.2 and points at `WithDetachedPayload`.
+    (#2082, #2084, #2113)
+
+  * [jws][jwe] `jws.VerifyMessage` and `jwe.DecryptMessage`
+    observe context cancellation between loop iterations rather
+    than only at boundaries. Long fan-out verify/decrypt loops
+    now respond to a cancelled context promptly. (#2111, #2116)
+
+  * [jwe] Reject PBES2 messages whose `p2c` (iteration count)
+    does not parse cleanly into int64 or violates the configured
+    bound. The error now names the violated bound (min vs max)
+    instead of the generic "out of range". (#2118)
+
+  * [jwe] `jwe.WithKey()` validates the alg-vs-key shape at
+    option construction time rather than during encryption, so
+    misuse surfaces at the call site instead of inside the
+    encrypt loop. (#2120)
+
+  * [jwe] Decrypt error-path cleanup: per-key failures from
+    key-set providers are surfaced via `errors.Join` so each
+    underlying error remains inspectable; the joined error count
+    is bounded to keep diagnostics readable; the redundant outer
+    `Decrypt:` prefix is dropped; and the compression-cap error
+    names the "decompressed" payload, the option, and the size.
+    (#2122, #2124, #2126)
+
+  * [jwe] Add `jwe.WithDisabledKeyAlgorithms(...)` as a global
+    policy hook (`jwe.Configure(...)` or per-call) for refusing
+    specific key-management algorithms across all `jwe.Decrypt`
+    calls. (#2128)
+
+  * [jwk] Stop duplicating JWK fields at the JWKS top level on
+    parse. A JWKS whose top-level object carries fields with the
+    same names as JWK members no longer copies those values into
+    every key in `keys`. (#2132)
+
+  * [jwk] The probe pass tolerates duplicate JSON field names in
+    the input. Previously the probe rejected duplicates even
+    though the second-pass unmarshal accepts them, so valid
+    inputs that round-tripped through tolerant decoders were
+    inconsistently rejected at parse time. (#2138)
+
+  * [jwk] A custom `jwk.KeyParser` returning `(nil, nil)` now
+    signals "continue to the next parser" rather than
+    "successfully produced a nil key". Callers no longer end up
+    with a nil `jwk.Key` from a successful parse when an
+    extension returns the empty pair. (#2139)
+
+  * [jwk] Stream the JWKS `keys` array with a cap-before-allocate
+    strategy. Inputs respect `WithMaxKeys` before any unbounded
+    slice growth, and bounded-size JWKS no longer over-allocate
+    based on attacker-controlled length hints. (#2136)
+
+  * [jwk] Additional typed errors on parse and export paths:
+    `UnknownKeyTypeError{KeyType string}` (when input has no
+    usable `kty` or names an unregistered family),
+    `KeyTypeMismatchError` surfaced from `jwk.Export` when the
+    source key doesn't match the destination type, and
+    `ParseError` sentinel wrapping on `jwk.ParseKey` /
+    `jwk.ParseKeyAs`. All follow the existing zero-value-struct +
+    `errors.Is` / `errors.AsType[T]` pattern.
+    (#2134, #2143, #2151)
+
+  * [jwt] `jwt.ParseRequest` no longer skips the request body
+    when the request uses chunked transfer encoding. The
+    Content-Length-based fast path previously bypassed
+    `ParseForm` for chunked requests even when `WithFormKey` was
+    supplied. (#2090)
+
+  * [jwt] `jwt.Settings` rejects out-of-range NumericDate
+    precision values at configuration time instead of silently
+    clamping. (#2092)
+
+  * [jwt] Pedantic mode (`jwt.WithPedanticParse(true)`) enforces
+    that nested-envelope JWTs declare `cty=JWT`. Tokens missing
+    `cty` or carrying a different value are rejected. (#2093)
+
+  * [jwt] `jwt.ParseInsecure` parses the loop-local payload split
+    from the input rather than the original input bytes. Fixes a
+    case where `ParseInsecure` could return a token assembled
+    from a different signature segment than the one being
+    inspected. (#2096)
+
+  * [jwt] `jwt.WithMaxDeltaIs(...)` and `jwt.WithMinDeltaIs(...)`
+    reject tokens whose compared claim is missing rather than
+    treating it as zero. Validation no longer silently succeeds
+    when the claim isn't present on the token. (#2098)
+
+  * [jwt] `jwt.Validate` fast and slow paths now check
+    `iat`/`exp`/`nbf` in the same order, so the same token
+    reaches the same verdict regardless of which path evaluated
+    it. (#2100)
+
+v4.0.1 28 Apr 2026
+  * [jwt] `jwt.Parse` / `jwt.ParseRequest` only call `ParseForm` when
+    `WithFormKey` is supplied. Previously the form body could be
+    consumed even when the caller did not opt in to form-source
+    extraction. (#2057)
+
+  * [jws] Keys fetched via the `jku` header are no longer accepted
+    for signature verification when the JWK declares `use=enc`. (#2059)
+
+  * [jwe] Reject messages whose protected-header `alg` conflicts with
+    a per-recipient `alg`. The previous behavior silently preferred
+    the protected-header value. (#2051)
+
+  * [jwk] `jwk.RegisterKeyImporter` refuses to register an importer
+    for the built-in raw key types so user registrations cannot
+    shadow stdlib types. (#2061)
+
+  * [jwk] ECDSA public keys whose X / Y coordinates exceed the
+    curve's byte length are rejected with a typed error instead of
+    reaching curve arithmetic with an out-of-range big.Int. (#2049)
+
+  * [jwa] Unify the signature, key-encryption, and
+    content-encryption algorithm tables behind a single
+    registration entry point. Extension algorithms register once
+    rather than via three parallel APIs. (#2062)
+
+  * [jwt] Fix `AddressClaim.MarshalJSON` to handle non-printable
+    bytes correctly. (#2054)
+
+  * [cmd/jwx] Warn before writing a private key to a TTY; reject
+    `keysize <= 0` for `oct` key generation. (#2070)
+
+v4.0.0 - 19 Apr 2026
+  * Initial v4 release. Major features:
+    * Lighter: Core / Companion module separation. Less dependencies in core.
+    * Faster: Use of generics and other optimizations make v4 2x~3x faster than before.
+    * Quantum-Ready: ML-KEM and ML-DSA, HPKE (+Hybrid) are supported through companion modules.
+  * See Changes-v4.md for a full set of Changes since v3.

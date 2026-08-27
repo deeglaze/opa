@@ -6,12 +6,13 @@ package bundle
 
 import (
 	"encoding/json"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jws"
 )
 
 func TestGenerateSignedToken(t *testing.T) {
@@ -164,8 +165,10 @@ func TestGeneratePayload(t *testing.T) {
 	}
 
 	var gotKid string
-	if err := token.Get("keyid", &gotKid); err != nil {
+	if gotKidV4, err := jwt.Get[string](token, "keyid"); err != nil {
 		t.Fatalf("Expected claim \"keyid\" in token: %s", err)
+	} else {
+		gotKid = gotKidV4
 	}
 
 	if gotKid != keyID {
@@ -178,8 +181,10 @@ func TestGeneratePayload(t *testing.T) {
 		t.Fatalf("Unexpected error %v", err)
 	}
 
-	if err := token.Get("keyid", &gotKid); err == nil {
+	if gotKidV4, err := jwt.Get[string](token, "keyid"); err == nil {
 		t.Fatal("Unexpected claim \"keyid\" in token")
+	} else {
+		gotKid = gotKidV4
 	}
 }
 

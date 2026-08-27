@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/open-policy-agent/opa/v1/storage"
 	inmem "github.com/open-policy-agent/opa/v1/storage/inmem/test"
@@ -334,7 +334,7 @@ func TestTopDownJWTEncodeSignES256(t *testing.T) {
 		t.Fatal("Failed to get first key")
 	}
 	var key any
-	err = jwk.Export(jwkKey, &key)
+	key, err = jwk.Export[any](jwkKey)
 	if err != nil {
 		t.Fatal("Failed to create private key")
 	}
@@ -343,7 +343,7 @@ func TestTopDownJWTEncodeSignES256(t *testing.T) {
 		t.Fatalf("failed to get public key: %v", err)
 	}
 	var rawPublicKey any
-	err = jwk.Export(publicKey, &rawPublicKey)
+	rawPublicKey, err = jwk.Export[any](publicKey)
 	if err != nil {
 		t.Fatalf("failed to export public key: %v", err)
 	}
@@ -470,7 +470,7 @@ func TestTopDownJWTEncodeSignES512(t *testing.T) {
 		t.Fatal("Failed to get first key")
 	}
 	var key any
-	err = jwk.Export(jwkKey, &key)
+	key, err = jwk.Export[any](jwkKey)
 	if err != nil {
 		t.Fatalf("Failed to create private key: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestTopDownJWTEncodeSignES512(t *testing.T) {
 		t.Fatalf("Failed to get public key: %v", err)
 	}
 	var rawPublicKey any
-	err = jwk.Export(publicKey, &rawPublicKey)
+	rawPublicKey, err = jwk.Export[any](publicKey)
 	if err != nil {
 		t.Fatalf("failed to export public key: %v", err)
 	}
@@ -997,8 +997,10 @@ func createJwt(payload string, privateKey string) (string, error) {
 	}
 
 	var pk any
-	if err := jwk.Export(jwkKey, &pk); err != nil {
+	if pkV4Exported, err := jwk.Export[any](jwkKey); err != nil {
 		return "", fmt.Errorf("failed to materialize key: %s", err.Error())
+	} else {
+		pk = pkV4Exported
 	}
 
 	alg := jwa.RS256()

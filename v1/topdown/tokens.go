@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jws/jwsbb"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jws/jwsbb"
 
 	"github.com/open-policy-agent/opa/v1/ast"
 	"github.com/open-policy-agent/opa/v1/topdown/builtins"
@@ -343,8 +343,8 @@ func getKeysFromCertOrJWK(certificate string) ([]verificationKey, error) {
 		if !ok {
 			continue
 		}
-		var key any
-		if err := jwk.Export(k, &key); err != nil {
+		key, err := jwk.Export[any](k)
+		if err != nil {
 			return nil, err
 		}
 		var alg string
@@ -855,7 +855,7 @@ func (header *tokenHeader) valid() bool {
 }
 
 func commonBuiltinJWTEncodeSign(bctx BuiltinContext, inputHeaders, jwsPayload, jwkSrc []byte, iter func(*ast.Term) error) error {
-	keys, err := jwk.Parse(jwkSrc)
+	keys, err := jwk.Parse(jwkSrc, jwk.WithStrictKeySetParsing(true))
 	if err != nil {
 		return err
 	}
@@ -1289,7 +1289,9 @@ func createTokenCacheKey(serializedJwt ast.Value, publicKey ast.Value) ast.Value
 }
 
 func init() {
-	jwk.Configure(jwk.WithMinRSAPublicExponent(0), jwk.WithMinRSAModulusBits(0))
+	if err := jwk.Settings(jwk.WithMinRSAPublicExponent(0), jwk.WithMinRSAModulusBits(0)); err != nil {
+		panic(err)
+	}
 
 	// By default, the JWT cache is disabled.
 	disabled := true

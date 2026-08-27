@@ -5,6 +5,10 @@ project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+### Miscellaneous
+
+- deps: upgrade `github.com/lestrrat-go/jwx` from v3 to v4
+
 ## 1.19.1
 
 This release uses the latest version of Go (1.26.6) to build OPA, fixing stdlib vulnerabilities in

@@ -8,9 +8,9 @@ package bundle
 import (
 	"fmt"
 
-	"github.com/lestrrat-go/jwx/v3/jwa"
-	"github.com/lestrrat-go/jwx/v3/jwk"
-	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/lestrrat-go/jwx/v4/jwa"
+	"github.com/lestrrat-go/jwx/v4/jwk"
+	"github.com/lestrrat-go/jwx/v4/jwt"
 )
 
 const defaultSignerID = "_default"
@@ -68,7 +68,7 @@ func (*DefaultSigner) GenerateSignedToken(files []FileInfo, sc *SigningConfig, k
 	// In order to sign the token with a kid, we need a key ID _on_ the key
 	// (note: we might be able to make this more efficient if we just load
 	// the key as a JWK from the start)
-	jwkKey, err := jwk.Import(privateKey)
+	jwkKey, err := jwk.Import[jwk.Key](privateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to import private key: %w", err)
 	}
